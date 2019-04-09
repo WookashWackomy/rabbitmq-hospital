@@ -31,28 +31,58 @@ public class Technician {
         String EXCHANGE_NAME = "hospital_channel";
         channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
 
-        String key = ""; // TODO
+
 
         // queue & bind
         String queueName = channel.queueDeclare().getQueue();
-        channel.queueBind(queueName, EXCHANGE_NAME, key);
+        for(String examinationType : examinationTypes) {
+            String key = "toTech.type." + examinationType + ".name.*"; // TODO
+            channel.queueBind(queueName, EXCHANGE_NAME, key);
+        }
+
         System.out.println("binded to : " + queueName);
 
-
         //message handling
+        Object monitor = new Object();
         DeliverCallback deliverCallback = (consumerTag, delivery) -> {
-            String message = new String(delivery.getBody(), StandardCharsets.UTF_8);
-            System.out.println(" [x] Received '" +
-                    delivery.getEnvelope().getRoutingKey() + "':'" + message + "'");
+            AMQP.BasicProperties replyProps = new AMQP.BasicProperties
+                    .Builder()
+                    .correlationId(delivery.getProperties().getCorrelationId())
+                    .build();
 
-            channel.basicPublish(EXCHANGE_NAME, key, null, message.getBytes(StandardCharsets.UTF_8));
-            System.out.println("Sent: " + message);
+            String response = "";
+
+            try {
+                String message = new String(delivery.getBody(), "UTF-8");
+
+                System.out.println(" [.] " + message);
+                response = message + " done";
+            } catch (RuntimeException e) {
+                System.out.println(" [.] " + e.toString());
+            } finally {
+                channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
+                channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                // RabbitMq consumer worker thread notifies the RPC server owner thread
+                synchronized (monitor) {
+                    monitor.notify();
+                }
+            }
         };
 
-        // start listening
         System.out.println("Waiting for messages...");
-        channel.basicConsume(queueName, true, deliverCallback, consumerTag ->{});
+        channel.basicConsume(queueName, false, deliverCallback, (consumerTag -> { }));
 
+
+        // Waiting for the messages
+        while (true) {
+            synchronized (monitor) {
+                try {
+                    monitor.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
 
     }
 }
