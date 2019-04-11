@@ -8,90 +8,86 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeoutException;
+import com.rabbitmq.client.AMQP.BasicProperties;
 
-public class Doctor implements AutoCloseable{
+public class Doctor{
     private Channel channel;
     private Connection connection;
-    private String EXCHANGE_NAME = "hospital_channel";
+    private static String EXCHANGE_NAME = "hospital_channel";
+    private final static String QUEUE_EXAMINATION = "doctor";
+    private final static String QUEUE_ADMIN = "admin";
+    private final static String corrId = UUID.randomUUID().toString();
 
-    public Doctor() throws IOException, TimeoutException {
-        // connection & channel
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost");
-        connection = factory.newConnection();
-        channel = connection.createChannel();
 
-        // exchange
-        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
-
-        // queue & bind
-        String queueName = channel.queueDeclare().getQueue();
-        System.out.println("binded to : " + queueName);
-    }
-
-    public static void main(String[] argv) throws Exception {
-
-        // info
+    public static void main(String[] argv) throws IOException, TimeoutException {
         System.out.println("I AM A DOCTOR");
 
-        try (Doctor doctor = new Doctor()) {
-
-
-            while (true) {
-
-                // read msg
-                BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-                System.out.println("Enter examination type: ");
-                String examinationType = br.readLine();
-
-                System.out.println("Enter pacient's name:");
-                String patientName = br.readLine();
-
-                // break condition
-                if ("exit".equals(examinationType)) {
-                    break;
-                }
-
-                String key = "toTech.type." + examinationType + ".name." + patientName;
-                String message = patientName.concat(" has problem with ").concat(examinationType);
-
-                doctor.sendMessage(key,message);
-            }
-        }catch(IOException | TimeoutException | InterruptedException e){
-            e.printStackTrace();
-        }
-        }
-
-    public String sendMessage(String key,String message) throws IOException, InterruptedException {
-        final String corrId = UUID.randomUUID().toString();
-
-        String replyQueueName = channel.queueDeclare().getQueue();
-        AMQP.BasicProperties props = new AMQP.BasicProperties
+        AMQP.BasicProperties props = new BasicProperties
                 .Builder()
                 .correlationId(corrId)
-                .replyTo(replyQueueName)
+                .replyTo(corrId)
                 .build();
 
-        channel.basicPublish(EXCHANGE_NAME, key, props, message.getBytes(StandardCharsets.UTF_8));
-        System.out.println("Sent: " + message);
-        final BlockingQueue<String> response = new ArrayBlockingQueue<>(1);
 
-        String ctag = channel.basicConsume(replyQueueName, true, (consumerTag, delivery) -> {
-            if (delivery.getProperties().getCorrelationId().equals(corrId)) {
-                response.offer(new String(delivery.getBody(), "UTF-8"));
-            }else{
-                response.offer(new String(delivery.getBody(), "UTF-8"));
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost("localhost");
+        Connection connection = factory.newConnection();
+        Channel channel = connection.createChannel();
+
+
+        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
+
+        channel.queueDeclare(QUEUE_EXAMINATION + corrId, false, false, true, null);
+        channel.queueBind(QUEUE_EXAMINATION + corrId, EXCHANGE_NAME, "#." + corrId + ".#");
+
+        channel.queueDeclare(QUEUE_ADMIN + corrId, false, false, true, null);
+        channel.queueBind(QUEUE_ADMIN + corrId, EXCHANGE_NAME, EXCHANGE_NAME + ".admin.info.#");
+
+
+        Consumer consumer = new DefaultConsumer(channel) {
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received from TECH: " + message);
             }
-        }, consumerTag -> {
-        });
+        };
 
-        String result = response.take();
-        channel.basicCancel(ctag);
-        return result;
-    }
+        Consumer consumerAdmin = new DefaultConsumer(channel) {
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received from ADMIN: " + message);
+            }
+        };
 
-    @Override
-    public void close() throws Exception {
+        channel.basicConsume(QUEUE_EXAMINATION + corrId, true, consumer);
+        channel.basicConsume(QUEUE_ADMIN + corrId, true, consumerAdmin);
+
+        while (true) {
+            System.out.println("Enter examination type");
+            BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+            String examinationType = br.readLine();
+
+            System.out.println("Enter patient name");
+            String patient = br.readLine();
+
+            String message =  examinationType + " " + patient;
+
+            if (message.contains("exitChannel")) {
+                break;
+            }
+            // send
+            if (message.contains("knee") || message.contains("elbow") || message.contains("hip")) {
+                channel.basicPublish(EXCHANGE_NAME, EXCHANGE_NAME + "." + examinationType, props, message.getBytes("UTF-8"));
+                channel.basicPublish(EXCHANGE_NAME, EXCHANGE_NAME + ".admin.log." + examinationType, props, message.getBytes("UTF-8"));
+                System.out.println("Sent: " + message);
+            } else {
+                System.out.println("Invalid examination type");
+            }
+
+        }
+
+        channel.close();
         connection.close();
     }
 }

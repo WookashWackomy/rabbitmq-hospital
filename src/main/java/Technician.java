@@ -1,16 +1,27 @@
 import com.rabbitmq.client.*;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.UUID;
 
 public class Technician {
 
     private static int maxExaminationTypes = 2;
+    private final static String EXCHANGE_HOSPITAL = "hospital_channel";
+    private final static String TECH_ID = UUID.randomUUID().toString();
 
     public static void main(String[] argv) throws Exception {
         System.out.println("I AM A TECHNICIAN");
+
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost("localhost");
+        Connection connection = factory.newConnection();
+        Channel channel = connection.createChannel();
+
+
+        channel.exchangeDeclare(EXCHANGE_HOSPITAL, BuiltinExchangeType.TOPIC);
 
 
         ArrayList<String> examinationTypes = new ArrayList<String>();
@@ -21,68 +32,58 @@ public class Technician {
             examinationTypes.add(br.readLine());
         }
 
-        // connection & channel
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost");
-        Connection connection = factory.newConnection();
-        Channel channel = connection.createChannel();
-
-        // exchange
-        String EXCHANGE_NAME = "hospital_channel";
-        channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
-
-
-
-        // queue & bind
-        String queueName = channel.queueDeclare().getQueue();
         for(String examinationType : examinationTypes) {
-            String key = "toTech.type." + examinationType + ".name.*"; // TODO
-            channel.queueBind(queueName, EXCHANGE_NAME, key);
-        }
+            channel.queueDeclare(examinationType, false, false, true, null);
+            channel.queueBind(examinationType, EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + "." + examinationType + ".#");
+   }
+        channel.queueDeclare( TECH_ID, false, false, true, null);
+        channel.queueBind(TECH_ID, EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + ".admin.info.#");
 
-        System.out.println("binded to : " + queueName);
 
-        //message handling
-        Object monitor = new Object();
-        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
-            AMQP.BasicProperties replyProps = new AMQP.BasicProperties
-                    .Builder()
-                    .correlationId(delivery.getProperties().getCorrelationId())
-                    .build();
-
-            String response = "";
-
-            try {
-                String message = new String(delivery.getBody(), "UTF-8");
-
-                System.out.println(" [.] " + message);
-                response = message + " done";
-            } catch (RuntimeException e) {
-                System.out.println(" [.] " + e.toString());
-            } finally {
-                channel.basicPublish("", delivery.getProperties().getReplyTo(), replyProps, response.getBytes("UTF-8"));
-                channel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
-                // RabbitMq consumer worker thread notifies the RPC server owner thread
-                synchronized (monitor) {
-                    monitor.notify();
-                }
+        Consumer consumer = new DefaultConsumer(channel) {
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received : " + message);
+                processRequest(4);
+                channel.basicPublish(EXCHANGE_HOSPITAL, properties.getReplyTo(), null, (message + " done").getBytes("UTF-8"));
+                channel.basicPublish(EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + ".admin.log", null, (message + " done").getBytes("UTF-8"));
+                System.out.println("Sent: " + (message + " done"));
             }
         };
 
-        System.out.println("Waiting for messages...");
-        channel.basicConsume(queueName, false, deliverCallback, (consumerTag -> { }));
+        Consumer consumerAdmin = new DefaultConsumer(channel) {
+            @Override
+            public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                String message = new String(body, "UTF-8");
+                System.out.println("Received from ADMIN: " + message);
+            }
+        };
 
 
-        // Waiting for the messages
+        //CONSUME
+        System.out.println("Waiting for messages");
+        for(String examinationType : examinationTypes) {
+            channel.basicConsume(examinationType, true, consumer);
+        }
+        channel.basicConsume( TECH_ID, true, consumerAdmin);
+
         while (true) {
-            synchronized (monitor) {
-                try {
-                    monitor.wait();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+            br = new BufferedReader(new InputStreamReader(System.in));
+            String line = br.readLine();
+            if (line.contains("exitChannel")) {
+                channel.close();
+                connection.close();
+                break;
             }
         }
+    }
 
+    private static void processRequest(int time) {
+        try {
+            Thread.sleep(time * 1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
