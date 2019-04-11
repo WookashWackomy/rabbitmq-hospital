@@ -11,7 +11,7 @@ public class Technician {
     private static int maxExaminationTypes = 2;
     private final static String EXCHANGE_HOSPITAL = "hospital_channel";
     private final static String QUEUE_PREFIX = "tech_";
-    private final static String TECH_ID = UUID.randomUUID().toString();
+    private final static String TECH_ID = "tech_info" + UUID.randomUUID().toString();
 
     public static void main(String[] argv) throws Exception {
         System.out.println("I AM A TECHNICIAN");
