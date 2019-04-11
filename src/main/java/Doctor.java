@@ -78,7 +78,7 @@ public class Doctor{
             }
             // send
             if (message.contains("knee") || message.contains("elbow") || message.contains("hip")) {
-                channel.basicPublish(EXCHANGE_NAME, EXCHANGE_NAME + "." + examinationType, props, message.getBytes("UTF-8"));
+                channel.basicPublish(EXCHANGE_NAME, EXCHANGE_NAME + ".tech." + examinationType, props, message.getBytes("UTF-8"));
                 channel.basicPublish(EXCHANGE_NAME, EXCHANGE_NAME + ".admin.log." + examinationType, props, message.getBytes("UTF-8"));
                 System.out.println("Sent: " + message);
             } else {

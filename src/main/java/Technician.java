@@ -10,7 +10,7 @@ public class Technician {
 
     private static int maxExaminationTypes = 2;
     private final static String EXCHANGE_HOSPITAL = "hospital_channel";
-    private final static String TECH_ID = UUID.randomUUID().toString();
+    private final static String TECH_ID = "tech"+UUID.randomUUID().toString();
 
     public static void main(String[] argv) throws Exception {
         System.out.println("I AM A TECHNICIAN");
@@ -33,8 +33,8 @@ public class Technician {
         }
 
         for(String examinationType : examinationTypes) {
-            channel.queueDeclare(examinationType, false, false, true, null);
-            channel.queueBind(examinationType, EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + "." + examinationType + ".#");
+            channel.queueDeclare("tech_"+examinationType, false, false, true, null);
+            channel.queueBind("tech_"+examinationType, EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + ".tech." + examinationType + ".#");
    }
         channel.queueDeclare( TECH_ID, false, false, true, null);
         channel.queueBind(TECH_ID, EXCHANGE_HOSPITAL, EXCHANGE_HOSPITAL + ".admin.info.#");
@@ -64,7 +64,7 @@ public class Technician {
         //CONSUME
         System.out.println("Waiting for messages");
         for(String examinationType : examinationTypes) {
-            channel.basicConsume(examinationType, true, consumer);
+            channel.basicConsume("tech_"+examinationType, true, consumer);
         }
         channel.basicConsume( TECH_ID, true, consumerAdmin);
 
