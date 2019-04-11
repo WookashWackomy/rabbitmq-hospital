@@ -12,7 +12,7 @@ public class Doctor{
     private Connection connection;
     private static String EXCHANGE_NAME = "hospital_channel";
     private final static String QUEUE_PREFIX = "doctor_";
-    private final static String QUEUE_ADMIN = "admin";
+    private final static String QUEUE_ADMIN = "doctor_info_queue";
     private final static String corrId = UUID.randomUUID().toString();
 
 
