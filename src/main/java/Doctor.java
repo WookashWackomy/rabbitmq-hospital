@@ -3,10 +3,7 @@ import com.rabbitmq.client.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeoutException;
 import com.rabbitmq.client.AMQP.BasicProperties;
 
@@ -14,7 +11,7 @@ public class Doctor{
     private Channel channel;
     private Connection connection;
     private static String EXCHANGE_NAME = "hospital_channel";
-    private final static String QUEUE_EXAMINATION = "doctor";
+    private final static String QUEUE_PREFIX = "doctor_";
     private final static String QUEUE_ADMIN = "admin";
     private final static String corrId = UUID.randomUUID().toString();
 
@@ -37,8 +34,8 @@ public class Doctor{
 
         channel.exchangeDeclare(EXCHANGE_NAME, BuiltinExchangeType.TOPIC);
 
-        channel.queueDeclare(QUEUE_EXAMINATION + corrId, false, false, true, null);
-        channel.queueBind(QUEUE_EXAMINATION + corrId, EXCHANGE_NAME, "#." + corrId + ".#");
+        channel.queueDeclare(QUEUE_PREFIX + corrId, false, false, true, null);
+        channel.queueBind(QUEUE_PREFIX + corrId, EXCHANGE_NAME, "#." + corrId + ".#");
 
         channel.queueDeclare(QUEUE_ADMIN + corrId, false, false, true, null);
         channel.queueBind(QUEUE_ADMIN + corrId, EXCHANGE_NAME, EXCHANGE_NAME + ".admin.info.#");
@@ -60,7 +57,7 @@ public class Doctor{
             }
         };
 
-        channel.basicConsume(QUEUE_EXAMINATION + corrId, true, consumer);
+        channel.basicConsume(QUEUE_PREFIX + corrId, true, consumer);
         channel.basicConsume(QUEUE_ADMIN + corrId, true, consumerAdmin);
 
         while (true) {
